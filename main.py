@@ -1,10 +1,12 @@
 import sys
+from datetime import datetime
+import pytz
+import json
 from PyQt5.QtWidgets import (
     QApplication, 
     QMainWindow, 
     QDockWidget, 
     QListWidget, 
-    QLabel, 
     QVBoxLayout, 
     QFormLayout, 
     QLineEdit, 
@@ -12,7 +14,12 @@ from PyQt5.QtWidgets import (
     QWidget, 
     QStackedWidget, 
     QPushButton,
-    QHBoxLayout
+    QHBoxLayout,
+    QTableWidget,
+    QHeaderView,
+    QDesktopWidget,
+    QMessageBox,
+    QTableWidgetItem
 )
 from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import Qt
@@ -24,11 +31,12 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("AlArham Laboratory")
         self.setWindowIcon(QIcon("logo.png"))
-        self.showFullScreen()
-        # screen_rect = QDesktopWidget().screenGeometry()
-        # self.resize(screen_rect.width(), screen_rect.height())
+        self.time_zone = pytz.timezone('Asia/Karachi')
+        screen_rect = QDesktopWidget().screenGeometry()
+        self.resize(screen_rect.width(), screen_rect.height())
+        # Maximize the window
+        self.showMaximized()
 
-        # Create the stacked widget for pages
         self.pages = QStackedWidget()
         self.setCentralWidget(self.pages)
 
@@ -59,33 +67,21 @@ class MainWindow(QMainWindow):
                 registration_date TEXT,
                 registration_center TEXT,
                 specimen TEXT,
-                consultant_name TEXT
+                consultant_name TEXT,
+                test_results TEXT
             )
         """)
         self.conn.commit()
 
     def create_pages(self):
-        self.generate_report_page = QStackedWidget()
+        self.add_entry_page = QStackedWidget()
         self.create_patient_info_form()
         self.create_test_results_form()
 
-        # Add the pages to the QStackedWidget
-        self.pages.addWidget(self.generate_report_page)   # index 0
-        # self.pages.addWidget(self.test_results_form)   # index 1
-
-        # Additional placeholder pages
-        self.search_patient_record_page = QLabel("This is the Search Patient Record page")
-        self.view_test_results_page = QLabel("This is the View Test Results page")
-        self.generate_test_report_page = QLabel("This is the Generate Test Report page")
-        self.billing_payments_page = QLabel("This is the Billing and Payments page")
-        self.backup_data_page = QLabel("This is the Backup Data page")
+        self.pages.addWidget(self.add_entry_page)
 
         # Add the other pages to the QStackedWidget
-        self.pages.addWidget(self.search_patient_record_page)    # index 2
-        self.pages.addWidget(self.view_test_results_page)        # index 3
-        self.pages.addWidget(self.generate_test_report_page)     # index 4
-        self.pages.addWidget(self.billing_payments_page)         # index 5
-        self.pages.addWidget(self.backup_data_page)              # index 6
+               
 
         # Set the initial page to "Create Patient Record"
         self.pages.setCurrentIndex(0)
@@ -124,16 +120,24 @@ class MainWindow(QMainWindow):
         form_layout.addRow("Consultant Name:", self.consultant_name)
 
         proceed_button = QPushButton("Proceed")
-        proceed_button.clicked.connect(lambda: self.swap_generate_report_forms(index=1))
+        proceed_button.clicked.connect(self.create_entry_into_db)
         form_layout.addRow(proceed_button)
 
-        self.generate_report_page.addWidget(self.patient_info_form)
+        self.add_entry_page.addWidget(self.patient_info_form)
 
     def create_test_results_form(self):
         self.test_results_form = QWidget()
-        form_layout = QFormLayout(self.test_results_form)
+        main_layout = QVBoxLayout(self.test_results_form)  # Attach main_layout to test_results_form directly
+
+        # Form layout for input fields
+        form_layout = QFormLayout()
         action_buttons_layout = QHBoxLayout()
         
+        # Adding input fields to form layout
+        self.case_no = QLineEdit()
+        self.case_no.setReadOnly(True)
+        form_layout.addRow("Case No:", self.case_no)
+
         self.test_name = QComboBox()
         self.test_name.addItems(test["name"] for test in tests_list)
         form_layout.addRow("Test Name:", self.test_name)
@@ -144,12 +148,15 @@ class MainWindow(QMainWindow):
         self.test_name.currentIndexChanged.connect(self.update_test_types)
 
         self.min_value = QLineEdit()
+        self.min_value.setReadOnly(True)
         form_layout.addRow("Minimum Value:", self.min_value)
 
         self.max_value = QLineEdit()
-        form_layout.addRow("Minimum Value:", self.max_value)
+        self.max_value.setReadOnly(True)
+        form_layout.addRow("Maximum Value:", self.max_value)
 
         self.unit = QLineEdit()
+        self.unit.setReadOnly(True)
         form_layout.addRow("Unit:", self.unit)
 
         self.result = QLineEdit()
@@ -158,23 +165,75 @@ class MainWindow(QMainWindow):
         self.update_test_measurements()
         self.test_type.currentIndexChanged.connect(self.update_test_measurements)
 
+        # Action buttons
         backward_button = QPushButton("Previous")
         backward_button.clicked.connect(lambda: self.swap_generate_report_forms(index=0))
 
         add_record = QPushButton("Add Record")
-        add_record.clicked.connect(self.submit_test_results)
+        add_record.clicked.connect(self.add_results_in_table)
 
         action_buttons_layout.addWidget(backward_button)
         action_buttons_layout.addWidget(add_record)
         form_layout.addRow(action_buttons_layout)
 
-        self.generate_report_page.addWidget(self.test_results_form)
+        # Add form layout to the main layout
+        main_layout.addLayout(form_layout)
+
+        # Create and add the QTableWidget outside the form layout
+        self.test_results_table = QTableWidget()
+        self.test_results_table.setColumnCount(7)
+        self.test_results_table.setHorizontalHeaderLabels(["Select", "Test Name", "Test Type", "Min Value", "Max Value", "Unit", "Result"])
+        header = self.test_results_table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.Stretch)
+        main_layout.addWidget(self.test_results_table)  # Add the table as a widget
+
+        delete_button = QPushButton("Remove Records")
+        delete_button.clicked.connect(self.remove_results_from_table)
+        main_layout.addWidget(delete_button)
+
+        # Finally, add everything to the main page
+        self.add_entry_page.addWidget(self.test_results_form)
 
     def swap_generate_report_forms(self, index):
         """Switch to the next form in the stack."""
-        self.generate_report_page.setCurrentIndex(index)  # Switch to the next form (Test Results)
+        self.add_entry_page.setCurrentIndex(index)  # Switch to the next form (Test Results)
+    
+    def create_entry_into_db(self):
+        """Initial Entry for saving patient info"""
+        if not self.patient_name.text().strip():
+            # Show error message if patient name is empty
+            self.show_error_dialog("Error", "Patient name cannot be empty!")
+            return
+        
+        self.test_results_list = []
 
-    def update_test_types(self): 
+        patient_data = {
+            "patient_name": self.patient_name.text(),
+            "father_husband_name": self.father_husband_name.text(),
+            "age": self.age.text(),
+            "gender": self.gender.currentText(),
+            "nic_number": self.nic_number.text(),
+            "address": self.address.text(),
+            "registration_date": datetime.now(self.time_zone).strftime('%Y-%m-%d %H:%M:%S'),
+            "registration_center": self.registration_center.text(),
+            "specimen": self.specimen.text(),
+            "consultant_name": self.consultant_name.text(),
+            "test_results": json.dumps(self.test_results_list),  # JSON data as string
+        }
+        self.cursor.execute("""
+            INSERT INTO LabReport (
+                patient_name, father_husband_name, age, gender, nic_number,
+                address, registration_date, registration_center, specimen,
+                consultant_name, test_results
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, tuple(patient_data.values()))
+        self.conn.commit()
+        if self.cursor.lastrowid:
+            self.case_no.setText(str(self.cursor.lastrowid))
+            self.swap_generate_report_forms(index=1)
+
+    def update_test_types(self):
+        """Update the test type options the test name changes""" 
         self.test_type.clear()
         selected_test_name = self.test_name.currentText()
         for test in tests_list:
@@ -183,6 +242,7 @@ class MainWindow(QMainWindow):
                 break
     
     def update_test_measurements(self):
+        """Update min_value, max_value and unit when the test type changes"""
         self.min_value.clear()
         self.max_value.clear()
         self.unit.clear()
@@ -199,7 +259,91 @@ class MainWindow(QMainWindow):
                         self.max_value.setText(test_type["maxValue"])
                         self.unit.setText(test_type["unit"])
                         break
-                        
+
+    def add_results_in_table(self):
+        """Add the done test results in the table to view"""
+        if not self.result.text().strip():
+            # Show error message if the result field is empty
+            self.show_error_dialog("Error", "Please enter the test results")
+            return
+
+        test_result = {
+            "name": self.test_name.currentText(),
+            "type": self.test_type.currentText(),
+            "minValue": self.min_value.text(),
+            "maxValue": self.max_value.text(),
+            "unit": self.unit.text(),
+            "result": self.result.text()
+        }
+
+        self.test_results_list.append(test_result)
+        row_position = self.test_results_table.rowCount()
+
+        # Insert a new row
+        self.test_results_table.insertRow(row_position)
+
+        # Create a checkbox for row selection (first column)
+        checkbox_item = QTableWidgetItem()
+        checkbox_item.setFlags(checkbox_item.flags() | Qt.ItemIsUserCheckable)  # Make item checkable
+        checkbox_item.setCheckState(Qt.Unchecked)  # Initially unchecked
+
+        # Set the checkbox item in the first column
+        self.test_results_table.setItem(row_position, 0, checkbox_item)
+
+        # Center the checkbox horizontally and vertically by adjusting the column width
+        self.test_results_table.setColumnWidth(0, 30)  # Adjust the width of the checkbox column
+        checkbox_item.setTextAlignment(Qt.AlignCenter)
+
+        # Insert the test data in the remaining columns (starting from column 1)
+        self.test_results_table.setItem(row_position, 1, QTableWidgetItem(test_result["name"]))
+        self.test_results_table.setItem(row_position, 2, QTableWidgetItem(test_result["type"]))
+        self.test_results_table.setItem(row_position, 3, QTableWidgetItem(test_result["minValue"]))
+        self.test_results_table.setItem(row_position, 4, QTableWidgetItem(test_result["maxValue"]))
+        self.test_results_table.setItem(row_position, 5, QTableWidgetItem(test_result["unit"]))  # Assuming 'unit' field exists
+        self.test_results_table.setItem(row_position, 6, QTableWidgetItem(test_result["result"]))
+
+        # Set text alignment for all columns with test data
+        for column in range(1, self.test_results_table.columnCount()):
+            item = self.test_results_table.item(row_position, column)
+            if item:
+                item.setTextAlignment(Qt.AlignCenter)
+
+        # Optionally, clear the input fields after adding the result to the table
+        self.result.clear()
+
+    def remove_results_from_table(self):
+        """Delete rows that are selected via checkboxes"""
+        rows_to_delete = []
+        
+        # Check which rows are selected for deletion
+        for row in range(self.test_results_table.rowCount()):
+            checkbox_item = self.test_results_table.item(row, 0)  # The checkbox is in the first column
+            if checkbox_item.checkState() == Qt.Checked:
+                rows_to_delete.append(row)
+        
+        # If no rows are selected, show an error message
+        if not rows_to_delete:
+            self.show_error_dialog("Error", "Please select at least one record to delete.")
+            return
+
+        # Delete selected rows in reverse order to avoid index shifting
+        for row in reversed(rows_to_delete):
+            # Remove from test_results_list as well
+            del self.test_results_list[row]
+
+            # Remove the row from the table
+            self.test_results_table.removeRow(row)
+
+    def show_error_dialog(self, title, message):
+        """Shows an error message box with the given title and message."""
+        error_dialog = QMessageBox()
+        error_dialog.setIcon(QMessageBox.Critical)
+        error_dialog.setWindowIcon(QIcon("logo.png"))
+        error_dialog.setWindowTitle(title)
+        error_dialog.setText(message)
+        error_dialog.setStandardButtons(QMessageBox.Ok)
+        error_dialog.exec_()
+
     def create_left_menu(self):
         # Create a dock widget for the menu
         self.left_menu = QDockWidget("Menu", self)
@@ -211,11 +355,8 @@ class MainWindow(QMainWindow):
 
         # Add a list of menu items
         menu_list = QListWidget()
-        menu_list.addItem("Create Patient Record")
-        menu_list.addItem("Search Patient Record")
-        menu_list.addItem("View Test Results")
-        menu_list.addItem("Generate Test Report")
-        menu_list.addItem("Billing and Payments")
+        menu_list.addItem("Add Entry")
+        menu_list.addItem("Generate Test")
         menu_list.addItem("Backup Data")
 
         # Set default selection to "Create Patient Record"
