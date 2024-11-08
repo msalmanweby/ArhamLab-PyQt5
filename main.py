@@ -167,14 +167,18 @@ class MainWindow(QMainWindow):
         self.test_type.currentIndexChanged.connect(self.update_test_measurements)
 
         # Action buttons
-        backward_button = QPushButton("Previous")
-        backward_button.clicked.connect(lambda: self.swap_generate_report_forms(index=0))
+        # backward_button = QPushButton("Previous")
+        # backward_button.clicked.connect(lambda: self.swap_generate_report_forms(index=0))
 
         add_record = QPushButton("Add Record")
         add_record.clicked.connect(self.add_results_in_table)
 
-        action_buttons_layout.addWidget(backward_button)
+        save_button = QPushButton("Save Records")
+        save_button.clicked.connect(self.update_entry_into_db)
+
+
         action_buttons_layout.addWidget(add_record)
+        action_buttons_layout.addWidget(save_button)
         form_layout.addRow(action_buttons_layout)
 
         # Add form layout to the main layout
@@ -232,6 +236,27 @@ class MainWindow(QMainWindow):
         if self.cursor.lastrowid:
             self.case_no.setText(str(self.cursor.lastrowid))
             self.swap_generate_report_forms(index=1)
+
+    def update_entry_into_db(self):
+        """Save the test results added into test results list into db"""
+        if not self.test_results_list:
+            self.show_error_dialog("Error", "No records have been added!")
+            return
+        patient_data = {
+            "test_results": json.dumps(self.test_results_list),  # JSON data as string
+        }
+        try:
+            self.cursor.execute("""
+                UPDATE LabReport 
+                SET test_results = ? 
+                WHERE id = ?
+                """, (patient_data["test_results"], self.case_no.text()))
+            self.conn.commit()
+            self.show_error_dialog("Sucess", "Report saved successfully!")
+        except Exception as e:
+            self.show_error_dialog("Error", f"{e}")
+            return
+
 
     def update_test_types(self):
         """Update the test type options the test name changes""" 
@@ -340,7 +365,10 @@ class MainWindow(QMainWindow):
     def show_error_dialog(self, title, message):
         """Shows an error message box with the given title and message."""
         error_dialog = QMessageBox()
-        error_dialog.setIcon(QMessageBox.Critical)
+        if title == "Error":
+            error_dialog.setIcon(QMessageBox.Critical)
+        else:
+            error_dialog.setIcon(QMessageBox.Information)
         error_dialog.setWindowIcon(QIcon("logo.png"))
         error_dialog.setWindowTitle(title)
         error_dialog.setText(message)
