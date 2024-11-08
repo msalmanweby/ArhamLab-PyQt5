@@ -19,7 +19,8 @@ from PyQt5.QtWidgets import (
     QHeaderView,
     QDesktopWidget,
     QMessageBox,
-    QTableWidgetItem
+    QTableWidgetItem, 
+    QCheckBox
 )
 from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import Qt
@@ -282,24 +283,24 @@ class MainWindow(QMainWindow):
         # Insert a new row
         self.test_results_table.insertRow(row_position)
 
-        # Create a checkbox for row selection (first column)
-        checkbox_item = QTableWidgetItem()
-        checkbox_item.setFlags(checkbox_item.flags() | Qt.ItemIsUserCheckable)  # Make item checkable
-        checkbox_item.setCheckState(Qt.Unchecked)  # Initially unchecked
+        # Create a checkbox widget for row selection (first column)
+        checkbox_widget = QWidget()
+        checkbox = QCheckBox()
+        checkbox_layout = QHBoxLayout(checkbox_widget)
+        checkbox_layout.addWidget(checkbox)
+        checkbox_layout.setAlignment(Qt.AlignCenter)  # Center the checkbox in the cell
+        checkbox_layout.setContentsMargins(0, 0, 0, 0)  # Remove padding
+        self.test_results_table.setCellWidget(row_position, 0, checkbox_widget)
 
-        # Set the checkbox item in the first column
-        self.test_results_table.setItem(row_position, 0, checkbox_item)
-
-        # Center the checkbox horizontally and vertically by adjusting the column width
-        self.test_results_table.setColumnWidth(0, 30)  # Adjust the width of the checkbox column
-        checkbox_item.setTextAlignment(Qt.AlignCenter)
+        # Set the checkbox column width
+        self.test_results_table.setColumnWidth(0, 30)
 
         # Insert the test data in the remaining columns (starting from column 1)
         self.test_results_table.setItem(row_position, 1, QTableWidgetItem(test_result["name"]))
         self.test_results_table.setItem(row_position, 2, QTableWidgetItem(test_result["type"]))
         self.test_results_table.setItem(row_position, 3, QTableWidgetItem(test_result["minValue"]))
         self.test_results_table.setItem(row_position, 4, QTableWidgetItem(test_result["maxValue"]))
-        self.test_results_table.setItem(row_position, 5, QTableWidgetItem(test_result["unit"]))  # Assuming 'unit' field exists
+        self.test_results_table.setItem(row_position, 5, QTableWidgetItem(test_result["unit"]))
         self.test_results_table.setItem(row_position, 6, QTableWidgetItem(test_result["result"]))
 
         # Set text alignment for all columns with test data
@@ -317,9 +318,11 @@ class MainWindow(QMainWindow):
         
         # Check which rows are selected for deletion
         for row in range(self.test_results_table.rowCount()):
-            checkbox_item = self.test_results_table.item(row, 0)  # The checkbox is in the first column
-            if checkbox_item.checkState() == Qt.Checked:
-                rows_to_delete.append(row)
+            checkbox_widget = self.test_results_table.cellWidget(row, 0)  # The checkbox is in the first column
+            if checkbox_widget is not None:
+                checkbox = checkbox_widget.findChild(QCheckBox)
+                if checkbox and checkbox.isChecked():
+                    rows_to_delete.append(row)
         
         # If no rows are selected, show an error message
         if not rows_to_delete:
