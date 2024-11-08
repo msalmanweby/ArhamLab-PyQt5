@@ -13,13 +13,58 @@ from PyQt5.QtWidgets import (
     QMessageBox,
     QTableWidgetItem, 
     QCheckBox,
-    QLabel
+    QLabel,
+    QDateEdit,
+    QDialogButtonBox,
+    QDialog
 )
 from PyQt5.QtGui import QIcon
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QDate
 from lab_modules import tests_list
+from app_config import time_zone, cursor, connection
 
-class PatientInfoPage(QWidget):
+class DialogMixin:
+    def show_dialog(self, title, message, dialog_type="information"):
+        """Shows a custom dialog with the given title, message, and type (Error, Information, Warning)."""
+        
+        # Create a custom dialog
+        dialog = QDialog()
+        dialog.setWindowTitle(title)
+        dialog.setWindowIcon(QIcon("logo.png"))
+        
+        # Set a fixed width for the dialog
+        dialog.setFixedWidth(400)
+        
+        # Create the layout
+        layout = QVBoxLayout()
+        
+        # Add the message text
+        label = QLabel(message)
+        layout.addWidget(label)
+        
+        # Create a button box and add the necessary buttons
+        button_box = QDialogButtonBox()
+        
+        # Depending on the dialog type, add the appropriate buttons
+        if dialog_type == "Warning":
+            button_box.addButton(QDialogButtonBox.Ok)
+            button_box.addButton(QDialogButtonBox.Cancel)
+        else:
+            button_box.addButton(QDialogButtonBox.Ok)  # Default for other types
+        
+        # Handle button clicks
+        button_box.accepted.connect(dialog.accept)  # OK button clicked, close the dialog
+        button_box.rejected.connect(dialog.reject)  # Cancel button clicked, close the dialog
+        
+        layout.addWidget(button_box)
+        
+        # Set the layout for the dialog
+        dialog.setLayout(layout)
+        
+        # Show the dialog
+        dialog.exec_()
+
+class PatientInfoPage(QWidget, DialogMixin):
     def __init__(self):
         super().__init__()
 
@@ -94,6 +139,7 @@ class PatientInfoPage(QWidget):
         self.test_type.currentIndexChanged.connect(self.update_test_price)
         self.scheduled_tests = []
 
+        row_layout_0.addStretch(1)
         row_layout_0.addWidget(reset_entry)
 
         row_layout_1.addWidget(self.patient_name_label)
@@ -149,8 +195,18 @@ class PatientInfoPage(QWidget):
         self.schedule_test_table = QTableWidget()
         self.schedule_test_table.setColumnCount(4)
         self.schedule_test_table.setHorizontalHeaderLabels(["Select", "Test Name", "Test Type", "Price"])
+        self.schedule_test_table.verticalHeader().setVisible(False)
+
+        # Set a fixed width for the "Select" column (the first column)
+        self.schedule_test_table.setColumnWidth(0, 80)  # Set a fixed width for "Select" column
+
+        # Set resizing behavior for the other columns
         header = self.schedule_test_table.horizontalHeader()
-        header.setSectionResizeMode(QHeaderView.Stretch)
+        header.setSectionResizeMode(1, QHeaderView.Stretch)  # "Test Name" column
+        header.setSectionResizeMode(2, QHeaderView.Stretch)  # "Test Type" column
+        header.setSectionResizeMode(3, QHeaderView.Stretch)  # "Price" column
+        
+        # Ensure the last section stretches to fill remaining space
         self.main_layout.addWidget(self.schedule_test_table)
 
         self.setLayout(self.main_layout)
@@ -159,13 +215,12 @@ class PatientInfoPage(QWidget):
         """Initial Entry for saving patient info"""
         if not self.patient_name.text().strip():
             # Show error message if patient name is empty
-            self.show_error_dialog("Error", "Patient name cannot be empty!")
+            self.show_dialog("Error", "Patient name cannot be empty!")
             return
         if not self.scheduled_tests:
             # Show error message if patient name is empty
-            self.show_error_dialog("Error", "No entries found for Scheduled test")
+            self.show_dialog("Error", "No entries found for Scheduled test")
             return
-        
         
 
         patient_data = {
@@ -175,7 +230,7 @@ class PatientInfoPage(QWidget):
             "gender": self.gender.currentText(),
             "nic_number": self.nic_number.text(),
             "address": self.address.text(),
-            "registration_date": datetime.now(self.time_zone).strftime('%Y-%m-%d %H:%M:%S'),
+            "registration_date": datetime.now(time_zone).strftime('%Y-%m-%d'),
             "registration_center": self.registration_center.text(),
             "specimen": self.specimen.currentText(),
             "consultant_name": self.consultant_name.currentText(),
@@ -183,19 +238,19 @@ class PatientInfoPage(QWidget):
             "test_results": json.dumps([]),  # JSON data as string
         }
         try:
-            self.cursor.execute("""
+            cursor.execute("""
                 INSERT INTO LabReport (
                     patient_name, father_husband_name, age, gender, nic_number,
                     address, registration_date, registration_center, specimen,
                     consultant_name, scheduled_tests, test_results
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, tuple(patient_data.values()))
-            self.conn.commit()
-            if self.cursor.lastrowid:
+            connection.commit()
+            if cursor.lastrowid:
                 self.reset_patient_info()
-                self.show_error_dialog("Success", f"Case {self.cursor.lastrowid} registration successfull!")
+                self.show_dialog("Success", f"Case {cursor.lastrowid} registration successfull!")
         except Exception as e:
-            self.show_error_dialog("Error", "Something went wrong, Try Again!")
+            self.show_dialog("Error", "Something went wrong, Try Again!")
             print(e)
             return
         
@@ -272,7 +327,7 @@ class PatientInfoPage(QWidget):
         
         # If no rows are selected, show an error message
         if not rows_to_delete:
-            self.show_error_dialog("Error", "Please select at least one record to delete.")
+            self.show_dialog("Error", "Please select at least one record to delete.")
             return
 
         # Delete selected rows in reverse order to avoid index shifting
@@ -308,16 +363,110 @@ class PatientInfoPage(QWidget):
         self.consultant_name.setCurrentIndex(0)
         self.test_name.setCurrentIndex(0)
 
-    def show_error_dialog(self, title, message):
-        """Shows an error message box with the given title and message."""
-        error_dialog = QMessageBox()
-        error_dialog.setFixedWidth(400)
-        if title == "Error":
-            error_dialog.setIcon(QMessageBox.Critical)
-        else:
-            error_dialog.setIcon(QMessageBox.Information)
-        error_dialog.setWindowIcon(QIcon("logo.png"))
-        error_dialog.setWindowTitle(title)
-        error_dialog.setText(message)
-        error_dialog.setStandardButtons(QMessageBox.Ok)
-        error_dialog.exec_()
+class AddResultsPage(QWidget, DialogMixin):
+    def __init__(self):
+        super().__init__()
+
+        self.main_layout = QVBoxLayout()
+        form_layout = QFormLayout()
+
+        row_layout_0 = QHBoxLayout()
+        
+        # Date input
+        self.date_input = QDateEdit()
+        self.date_input.setCalendarPopup(True)  # Show a calendar popup for easier date selection
+        self.date_input.setDate(QDate.currentDate())  # Set the default date to today
+        self.date_input.setFixedWidth(270)
+        
+        # Search record button
+        search_button = QPushButton("Search Record")
+        search_button.clicked.connect(self.search_records)
+        search_button.setFixedWidth(100)
+        
+        
+        row_layout_0.addWidget(self.date_input)
+        row_layout_0.addWidget(search_button)
+
+        form_layout.addRow(row_layout_0)
+
+        self.main_layout.addLayout(form_layout)
+
+        self.results_table = QTableWidget()
+        self.results_table.setColumnCount(6)
+        self.results_table.setHorizontalHeaderLabels(["Select", "Case No", "Patient Name", "Father/Husband Name", "Nic Number", "Test"])
+        # Set a fixed width for the "Select" column (the first column)
+        self.results_table.setColumnWidth(0, 80)  # Adjust the value as needed
+        self.results_table.setColumnWidth(1, 80)  # Adjust the value as needed
+        # In your table initialization code, hide the row numbers:
+        self.results_table.verticalHeader().setVisible(False)
+        # Set section resize mode for other columns to stretch
+        header = self.results_table.horizontalHeader()
+        header.setSectionResizeMode(2, QHeaderView.Stretch)  # Patient Name column
+        header.setSectionResizeMode(3, QHeaderView.Stretch)  # Actions column
+        header.setSectionResizeMode(4, QHeaderView.Stretch)  # Case No column
+        header.setSectionResizeMode(5, QHeaderView.Stretch)  # Case No column
+
+        self.main_layout.addWidget(self.results_table)
+
+        # Set layout
+        self.setLayout(self.main_layout)
+
+    def search_records(self):
+        try:
+            cursor.execute("""
+                                SELECT * FROM LabReport 
+                                WHERE registration_date = ?""", 
+                                (self.date_input.date().toString('yyyy-MM-dd'),))
+            rows = cursor.fetchall()
+            if rows:
+                self.show_dialog("Sucess", f"{len(rows)} results fetched.")
+                self.add_results_in_table(rows=rows)
+            else:
+                self.show_dialog("Error", "No records found for the selected date.")
+                return
+        except Exception as e:
+            self.show_dialog("Error" , "Unable to fetch results")
+            print(e)
+            return
+        
+    def add_results_in_table(self, rows):
+        # Clear the table before populating it
+        self.results_table.setRowCount(0)
+        
+        # Loop through each row and add it to the table
+        for row in rows:
+            row_position = self.results_table.rowCount()
+            self.results_table.insertRow(row_position)
+
+            # Create a checkbox widget for row selection (first column)
+            checkbox_widget = QWidget()
+            checkbox = QCheckBox()
+            checkbox_layout = QHBoxLayout(checkbox_widget)
+            checkbox_layout.addWidget(checkbox)
+            checkbox_layout.setAlignment(Qt.AlignCenter)  # Center the checkbox in the cell
+            checkbox_layout.setContentsMargins(0, 0, 0, 0)  # Remove padding
+            self.results_table.setCellWidget(row_position, 0, checkbox_widget)
+            
+            # Add data to each column (0: Select, 1: Case No, 2: Patient Name, 3: Father/Husband Name, 4: Nic Number, 5: Test)
+            self.results_table.setItem(row_position, 1, QTableWidgetItem(str(row[0])))  # Case No (ID)
+            self.results_table.setItem(row_position, 2, QTableWidgetItem(row[1]))  # Patient Name
+            self.results_table.setItem(row_position, 3, QTableWidgetItem(row[2]))  # Father/Husband Name
+            self.results_table.setItem(row_position, 4, QTableWidgetItem(row[5]))  # NIC Number
+            
+            # Parse the JSON data in the scheduled_tests column and extract the test names
+            try:
+                scheduled_tests = json.loads(row[11])  # Scheduled tests column
+                test_names = [test['name'] for test in scheduled_tests if 'name' in test]
+                test_names_str = ", ".join(test_names)  # Join test names with commas
+                
+                # Add the test names to the table in the "Test" column
+                self.results_table.setItem(row_position, 5, QTableWidgetItem(test_names_str))
+            except (json.JSONDecodeError, KeyError) as e:
+                # If there's an error parsing the JSON or accessing 'name', handle it gracefully
+                self.results_table.setItem(row_position, 5, QTableWidgetItem("Invalid data"))
+
+            # Set text alignment for all columns with test data
+            for column in range(1, self.results_table.columnCount()):
+                item = self.results_table.item(row_position, column)
+                if item:
+                    item.setTextAlignment(Qt.AlignCenter)

@@ -1,33 +1,19 @@
 import sys
-from datetime import datetime
 import pytz
-import json
 from PyQt5.QtWidgets import (
     QApplication, 
     QMainWindow, 
     QDockWidget, 
     QListWidget, 
-    QVBoxLayout, 
-    QFormLayout, 
-    QLineEdit, 
-    QComboBox, 
+    QVBoxLayout,  
     QWidget, 
     QStackedWidget, 
-    QPushButton,
-    QHBoxLayout,
-    QTableWidget,
-    QHeaderView,
     QDesktopWidget,
-    QMessageBox,
-    QTableWidgetItem, 
-    QCheckBox,
-    QLabel
 )
-from PyQt5.QtGui import QIcon, QFont
+from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import Qt
-import sqlite3
-from lab_modules import tests_list
-from patient_info_page import PatientInfoPage
+from page_modules import PatientInfoPage, AddResultsPage
+from app_config import cursor, connection
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -44,8 +30,10 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(self.pages)
 
         self.patient_info_page = PatientInfoPage()
+        self.add_results_page = AddResultsPage()
         # Set the initial page to "Create Patient Record"
         self.pages.addWidget(self.patient_info_page)
+        self.pages.addWidget(self.add_results_page)
         self.pages.setCurrentIndex(0)
 
         # Create the left menu
@@ -56,11 +44,9 @@ class MainWindow(QMainWindow):
 
     def init_db(self):
         """Initialize SQLite database and create tables if not exists."""
-        self.conn = sqlite3.connect("lab_reports.db")
-        self.cursor = self.conn.cursor()
 
         # Create LabReport table if it doesn't exist
-        self.cursor.execute(""" 
+        cursor.execute(""" 
             CREATE TABLE IF NOT EXISTS LabReport (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 patient_name TEXT,
@@ -77,7 +63,7 @@ class MainWindow(QMainWindow):
                 test_results TEXT
             )
         """)
-        self.conn.commit()
+        connection.commit()
 
     # def create_pages(self):
     #     self.patient_info_page = PatientInfoPage()
