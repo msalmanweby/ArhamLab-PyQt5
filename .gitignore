@@ -9,4 +9,5 @@ __pycache__/
 # Ignore virtual environment directory
 venv/
 env/
+.env
 lab_reports.db

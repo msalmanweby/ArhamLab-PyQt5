@@ -64,6 +64,159 @@ class DialogMixin:
         # Show the dialog
         dialog.exec_()
 
+
+class AddResultDialog(QDialog, DialogMixin):
+    def __init__(self, record, parent=None):
+        super().__init__(parent)
+        self.case_no = record[0]
+        self.setWindowTitle(f"Case No: {self.case_no}")
+        self.setMinimumSize(300, 200)
+
+        # Set up the layout
+        main_layout = QVBoxLayout()
+        form_layout = QFormLayout()
+        self.test_results = json.loads(record[12])
+        self.scheduled_tests = json.loads(record[11])
+        if not self.test_results:
+            self.initialize_test_results()
+
+
+        self.test_name = QComboBox()
+        self.test_name.addItems(test["name"] for test in self.test_results)
+        form_layout.addRow("Test Name:", self.test_name)
+
+        self.test_type = QComboBox()
+        form_layout.addRow("Test Type:", self.test_type)
+        self.update_test_types()
+        self.test_name.currentIndexChanged.connect(self.update_test_types)
+
+        self.min_value = QLineEdit()
+        self.min_value.setReadOnly(True)
+        form_layout.addRow("Minimum Value:", self.min_value)
+
+        self.max_value = QLineEdit()
+        self.max_value.setReadOnly(True)
+        form_layout.addRow("Maximum Value:", self.max_value)
+
+        self.unit = QLineEdit()
+        self.unit.setReadOnly(True)
+        form_layout.addRow("Unit:", self.unit)
+
+        self.result = QLineEdit()
+        form_layout.addRow("Result:", self.result)
+
+        self.update_test_measurements()
+        self.test_type.currentIndexChanged.connect(self.update_test_measurements)
+
+        update_result = QPushButton("Update")
+        update_result.clicked.connect(self.update_results_in_db)
+        form_layout.addRow(update_result)
+
+        update_result.clicked.connect(self.update_results_in_db)
+        
+
+        main_layout.addLayout(form_layout)
+
+        self.setLayout(main_layout)
+
+    def initialize_test_results(self): 
+        for scheduled_test in self.scheduled_tests:
+            test_name = scheduled_test["name"]
+            test_type = scheduled_test["type"]
+            
+            # Find the corresponding test in tests_list
+            test_data = next((test for test in tests_list if test["name"] == test_name), None)
+            
+            if test_data:
+                # Get the type information for the specific test type
+                types_info = [t for t in test_data["types"] if t["name"] == test_type]
+                
+                # Check if this test_name already exists in self.test_results
+                existing_test = next((test for test in self.test_results if test["name"] == test_name), None)
+                
+                if existing_test:
+                    # If the test already exists, extend its types list with new types
+                    existing_test["types"].extend(
+                        {
+                            "name": t["name"],
+                            "minValue": t["minValue"],
+                            "maxValue": t["maxValue"],
+                            "unit": t["unit"],
+                            "result": ""  # Initialize result as an empty string
+                        } for t in types_info
+                    )
+                else:
+                    # If the test doesn't exist, add a new entry
+                    self.test_results.append({
+                        "name": test_name,
+                        "types": [
+                            {
+                                "name": t["name"],
+                                "minValue": t["minValue"],
+                                "maxValue": t["maxValue"],
+                                "unit": t["unit"],
+                                "result": ""  # Initialize result as an empty string
+                            } for t in types_info
+                        ]
+                    })
+    def update_results_in_db(self):
+        # Retrieve selected test and type
+        selected_test_name = self.test_name.currentText()
+        selected_test_type = self.test_type.currentText()
+        entered_result = self.result.text()
+
+        # Find the selected test in self.test_results
+        selected_test = next((test for test in self.test_results if test["name"] == selected_test_name), None)
+
+        if selected_test:
+            # Find the specific type within the selected test
+            selected_type = next((t for t in selected_test["types"] if t["name"] == selected_test_type), None)
+
+            if selected_type:
+                # Update the result for this test type
+                selected_type["result"] = entered_result
+
+        cursor.execute("""
+            UPDATE LabReport
+            SET test_results = ?
+            WHERE id = ?
+        """, (json.dumps(self.test_results), self.case_no))
+
+        # Commit the changes to the database
+        connection.commit()
+
+
+    def update_test_types(self):
+        self.test_type.clear()
+        selected_test_name = self.test_name.currentText()
+        for test in self.test_results:
+            if test["name"] == selected_test_name:
+                self.test_type.addItems(test_type["name"] for test_type in test["types"])
+                break
+    
+    def update_test_measurements(self):
+        """Update min_value, max_value and unit when the test type changes"""
+        self.min_value.clear()
+        self.max_value.clear()
+        self.unit.clear()
+        self.result.clear()
+
+        selected_test_name = self.test_name.currentText()
+        selected_test_type = self.test_type.currentText()
+
+        for test in self.test_results:
+            if test["name"] == selected_test_name:
+                for test_type in test["types"]:
+                    if test_type["name"] == selected_test_type:
+                        self.min_value.setText(test_type["minValue"])
+                        self.max_value.setText(test_type["maxValue"])
+                        self.unit.setText(test_type["unit"])
+                        self.result.setText(test_type["result"])
+                        break
+
+    
+
+
 class PatientInfoPage(QWidget, DialogMixin):
     def __init__(self):
         super().__init__()
@@ -382,18 +535,28 @@ class AddResultsPage(QWidget, DialogMixin):
         search_button = QPushButton("Search Record")
         search_button.clicked.connect(self.search_records)
         search_button.setFixedWidth(100)
+
+        add_results = QPushButton("Add Results")
+        add_results.clicked.connect(self.add_scheduled_test_result)
+        add_results.setFixedWidth(100)
+
+        delete_entry = QPushButton("Delete Entry")
+        delete_entry.clicked.connect(self.delete_record_from_database)
+        delete_entry.setFixedWidth(100)
         
         
         row_layout_0.addWidget(self.date_input)
         row_layout_0.addWidget(search_button)
+        row_layout_0.addWidget(add_results)
+        row_layout_0.addWidget(delete_entry)
 
         form_layout.addRow(row_layout_0)
 
         self.main_layout.addLayout(form_layout)
 
         self.results_table = QTableWidget()
-        self.results_table.setColumnCount(6)
-        self.results_table.setHorizontalHeaderLabels(["Select", "Case No", "Patient Name", "Father/Husband Name", "Nic Number", "Test"])
+        self.results_table.setColumnCount(7)
+        self.results_table.setHorizontalHeaderLabels(["Select", "Case No", "Patient Name", "Father/Husband Name", "Nic Number", "Test", "Status"])
         # Set a fixed width for the "Select" column (the first column)
         self.results_table.setColumnWidth(0, 80)  # Adjust the value as needed
         self.results_table.setColumnWidth(1, 80)  # Adjust the value as needed
@@ -405,6 +568,7 @@ class AddResultsPage(QWidget, DialogMixin):
         header.setSectionResizeMode(3, QHeaderView.Stretch)  # Actions column
         header.setSectionResizeMode(4, QHeaderView.Stretch)  # Case No column
         header.setSectionResizeMode(5, QHeaderView.Stretch)  # Case No column
+        header.setSectionResizeMode(6, QHeaderView.Stretch)  # Case No column
 
         self.main_layout.addWidget(self.results_table)
 
@@ -432,7 +596,7 @@ class AddResultsPage(QWidget, DialogMixin):
     def add_results_in_table(self, rows):
         # Clear the table before populating it
         self.results_table.setRowCount(0)
-        
+
         # Loop through each row and add it to the table
         for row in rows:
             row_position = self.results_table.rowCount()
@@ -446,6 +610,9 @@ class AddResultsPage(QWidget, DialogMixin):
             checkbox_layout.setAlignment(Qt.AlignCenter)  # Center the checkbox in the cell
             checkbox_layout.setContentsMargins(0, 0, 0, 0)  # Remove padding
             self.results_table.setCellWidget(row_position, 0, checkbox_widget)
+
+            # Connect the checkbox click event to handle single selection
+            checkbox.clicked.connect(lambda state, row=row_position: self.on_checkbox_clicked(row))
             
             # Add data to each column (0: Select, 1: Case No, 2: Patient Name, 3: Father/Husband Name, 4: Nic Number, 5: Test)
             self.results_table.setItem(row_position, 1, QTableWidgetItem(str(row[0])))  # Case No (ID)
@@ -465,8 +632,75 @@ class AddResultsPage(QWidget, DialogMixin):
                 # If there's an error parsing the JSON or accessing 'name', handle it gracefully
                 self.results_table.setItem(row_position, 5, QTableWidgetItem("Invalid data"))
 
+            # Set the report status
+            test_results = json.loads(row[12])
+            if not test_results:
+                self.results_table.setItem(row_position, 6, QTableWidgetItem("Pending"))
+            else:
+                has_empty_result = any(
+                    type_info["result"] == "" 
+                    for test in test_results 
+                    for type_info in test["types"]
+                )
+
+                if has_empty_result:
+                    self.results_table.setItem(row_position, 6, QTableWidgetItem("Pending"))
+                else:
+                    self.results_table.setItem(row_position, 6, QTableWidgetItem("Completed"))
+
             # Set text alignment for all columns with test data
             for column in range(1, self.results_table.columnCount()):
                 item = self.results_table.item(row_position, column)
                 if item:
                     item.setTextAlignment(Qt.AlignCenter)
+    
+    def on_checkbox_clicked(self, row_position):
+        # Uncheck all other checkboxes
+        for i in range(self.results_table.rowCount()):
+            checkbox_widget = self.results_table.cellWidget(i, 0)
+            if checkbox_widget:
+                checkbox = checkbox_widget.findChild(QCheckBox)
+                if checkbox and i != row_position:
+                    checkbox.setChecked(False)
+
+        # Select the row programmatically
+        self.results_table.selectRow(row_position)
+
+
+    def add_scheduled_test_result(self):
+        selected_case_no = self.get_selected_row()
+        
+        if selected_case_no is None:
+            # Error message is already shown in get_selected_row, no need to duplicate it here
+            return
+
+        # try:
+        # Query the database using the selected "Case No"
+        cursor.execute("SELECT * FROM LabReport WHERE id = ?", (selected_case_no,))
+        result = cursor.fetchone()
+        
+        if result:
+            # Process the result, e.g., open a dialog to display it
+            dialog = AddResultDialog(result, self)
+            dialog.exec_()
+            self.add_results_in_table()
+        else:
+            self.show_dialog("Error", "No record found for the selected Case No.")
+
+    def get_selected_row(self):
+        # Loop through each row to check if the checkbox in the first column is checked
+        for row in range(self.results_table.rowCount()):
+            checkbox_widget = self.results_table.cellWidget(row, 0)
+            if checkbox_widget:
+                checkbox = checkbox_widget.findChild(QCheckBox)
+                if checkbox and checkbox.isChecked():
+                    # Retrieve "Case No" from the selected row (assuming it's in column 1)
+                    case_no_item = self.results_table.item(row, 1)
+                    if case_no_item:
+                        return case_no_item.text()  # Return the Case No as a string
+        # If no checkbox is checked, show an error and return None
+        self.show_dialog("Error", "Please select at least one record.")
+        return None
+
+    def delete_record_from_database(self):
+        pass

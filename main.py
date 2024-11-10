@@ -65,12 +65,6 @@ class MainWindow(QMainWindow):
         """)
         connection.commit()
 
-    # def create_pages(self):
-    #     self.patient_info_page = PatientInfoPage()
-    #     # Set the initial page to "Create Patient Record"
-    #     self.pages.addWidget(self.patient_info_page)
-    #     self.pages.setCurrentIndex(0)
-
     
 
     def create_left_menu(self):
