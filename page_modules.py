@@ -25,9 +25,17 @@ from app_config import time_zone, cursor, connection
 
 class DialogMixin:
     def show_dialog(self, title, message, dialog_type="information"):
-        """Shows a custom dialog with the given title, message, and type (Error, Information, Warning)."""
+        """Shows a custom dialog with the given title, message, and type (Error, Information, Warning, Confirmation)."""
         
-        # Create a custom dialog
+        # Check if the dialog is a confirmation
+        if dialog_type == "confirmation":
+            confirm = QMessageBox.question(self, title, message, QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            if confirm == QMessageBox.Yes:
+                return True
+            else:
+                return False
+        
+        # Create a custom dialog for other types (Information, Warning, etc.)
         dialog = QDialog()
         dialog.setWindowTitle(title)
         dialog.setWindowIcon(QIcon("logo.png"))
@@ -46,11 +54,11 @@ class DialogMixin:
         button_box = QDialogButtonBox()
         
         # Depending on the dialog type, add the appropriate buttons
-        if dialog_type == "Warning":
-            button_box.addButton(QDialogButtonBox.Ok)
-            button_box.addButton(QDialogButtonBox.Cancel)
-        else:
-            button_box.addButton(QDialogButtonBox.Ok)  # Default for other types
+        # if dialog_type == "Warning":
+        #     button_box.addButton(QDialogButtonBox.Ok)
+        #     button_box.addButton(QDialogButtonBox.Cancel)
+        # else:
+        button_box.addButton(QDialogButtonBox.Ok)  # Default for other types
         
         # Handle button clicks
         button_box.accepted.connect(dialog.accept)  # OK button clicked, close the dialog
@@ -533,7 +541,7 @@ class AddResultsPage(QWidget, DialogMixin):
         
         # Search record button
         search_button = QPushButton("Search Record")
-        search_button.clicked.connect(self.search_records)
+        search_button.clicked.connect(lambda: self.search_records(show_dialog=True))
         search_button.setFixedWidth(100)
 
         add_results = QPushButton("Add Results")
@@ -543,6 +551,10 @@ class AddResultsPage(QWidget, DialogMixin):
         delete_entry = QPushButton("Delete Entry")
         delete_entry.clicked.connect(self.delete_record_from_database)
         delete_entry.setFixedWidth(100)
+
+        generate_report = QPushButton("Generate Report")
+        generate_report.clicked.connect(self.delete_record_from_database)
+        generate_report.setFixedWidth(100)
         
         
         row_layout_0.addWidget(self.date_input)
@@ -575,18 +587,21 @@ class AddResultsPage(QWidget, DialogMixin):
         # Set layout
         self.setLayout(self.main_layout)
 
-    def search_records(self):
+    def search_records(self, show_dialog=True):
         try:
             cursor.execute("""
                                 SELECT * FROM LabReport 
                                 WHERE registration_date = ?""", 
                                 (self.date_input.date().toString('yyyy-MM-dd'),))
-            rows = cursor.fetchall()
-            if rows:
-                self.show_dialog("Sucess", f"{len(rows)} results fetched.")
-                self.add_results_in_table(rows=rows)
+            self.rows = cursor.fetchall()
+            if self.rows:
+                if show_dialog:  # Show dialog only if it's not an update
+                    self.show_dialog("Success", f"{len(self.rows)} results fetched.")
+                self.add_results_in_table(rows=self.rows)
             else:
-                self.show_dialog("Error", "No records found for the selected date.")
+                self.results_table.setRowCount(0)  # Clear the table
+                if show_dialog:
+                    self.show_dialog("Error", "No records found for the selected date.")
                 return
         except Exception as e:
             self.show_dialog("Error" , "Unable to fetch results")
@@ -623,11 +638,11 @@ class AddResultsPage(QWidget, DialogMixin):
             # Parse the JSON data in the scheduled_tests column and extract the test names
             try:
                 scheduled_tests = json.loads(row[11])  # Scheduled tests column
-                test_names = [test['name'] for test in scheduled_tests if 'name' in test]
-                test_names_str = ", ".join(test_names)  # Join test names with commas
+                # test_names = [test['name'] for test in scheduled_tests if 'name' in test]
+                # test_names_str = ", ".join(test_names)  # Join test names with commas
                 
                 # Add the test names to the table in the "Test" column
-                self.results_table.setItem(row_position, 5, QTableWidgetItem(test_names_str))
+                self.results_table.setItem(row_position, 5, QTableWidgetItem(str(len(scheduled_tests))))
             except (json.JSONDecodeError, KeyError) as e:
                 # If there's an error parsing the JSON or accessing 'name', handle it gracefully
                 self.results_table.setItem(row_position, 5, QTableWidgetItem("Invalid data"))
@@ -683,7 +698,7 @@ class AddResultsPage(QWidget, DialogMixin):
             # Process the result, e.g., open a dialog to display it
             dialog = AddResultDialog(result, self)
             dialog.exec_()
-            self.add_results_in_table()
+            self.search_records(show_dialog=False)
         else:
             self.show_dialog("Error", "No record found for the selected Case No.")
 
@@ -703,4 +718,35 @@ class AddResultsPage(QWidget, DialogMixin):
         return None
 
     def delete_record_from_database(self):
-        pass
+        try:
+            # Get the selected row's Case No using the get_selected_row method
+            case_no = self.get_selected_row()
+            
+            # If no row is selected, the get_selected_row will return None and show an error dialog
+            if case_no is None:
+                return  # Early exit as an error dialog has already been shown
+
+            # Ask the user to confirm the deletion action using the show_dialog method
+            confirm = self.show_dialog("Confirm Delete", 
+                                    f"Are you sure you want to delete the Case No {case_no}?", 
+                                    dialog_type="confirmation")
+            if not confirm:
+                return  # Exit if the user cancels the deletion
+            
+            # Delete the record from the database based on the Case No
+            cursor.execute("DELETE FROM LabReport WHERE id = ?", (case_no,))
+            connection.commit()
+            
+            # Show a success message
+            self.show_dialog("Success", f"Record with Case No {case_no} has been deleted.")
+            
+            # Refresh the table to reflect the change
+            self.search_records(show_dialog=False)  # Pass show_dialog=False to prevent an additional success message
+            
+        except Exception as e:
+            # Handle any exceptions and display an error dialog
+            self.show_dialog("Error", "Failed to delete the record.")
+            print(e)
+        
+        def generate_patient_report(self):
+            pass
