@@ -22,6 +22,7 @@ from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import Qt, QDate
 from lab_modules import tests_list
 from app_config import time_zone, cursor, connection
+from report_modules import PDFGenerator
 
 class DialogMixin:
     def show_dialog(self, title, message, dialog_type="information"):
@@ -553,7 +554,7 @@ class AddResultsPage(QWidget, DialogMixin):
         delete_entry.setFixedWidth(100)
 
         generate_report = QPushButton("Generate Report")
-        generate_report.clicked.connect(self.delete_record_from_database)
+        generate_report.clicked.connect(self.generate_patient_report)
         generate_report.setFixedWidth(100)
         
         
@@ -561,6 +562,7 @@ class AddResultsPage(QWidget, DialogMixin):
         row_layout_0.addWidget(search_button)
         row_layout_0.addWidget(add_results)
         row_layout_0.addWidget(delete_entry)
+        row_layout_0.addWidget(generate_report)
 
         form_layout.addRow(row_layout_0)
 
@@ -683,10 +685,10 @@ class AddResultsPage(QWidget, DialogMixin):
 
 
     def add_scheduled_test_result(self):
-        selected_case_no = self.get_selected_row()
+        selected_case_no = self.get_case_no()
         
         if selected_case_no is None:
-            # Error message is already shown in get_selected_row, no need to duplicate it here
+            # Error message is already shown in get_case_no, no need to duplicate it here
             return
 
         # try:
@@ -702,7 +704,7 @@ class AddResultsPage(QWidget, DialogMixin):
         else:
             self.show_dialog("Error", "No record found for the selected Case No.")
 
-    def get_selected_row(self):
+    def get_case_no(self):
         # Loop through each row to check if the checkbox in the first column is checked
         for row in range(self.results_table.rowCount()):
             checkbox_widget = self.results_table.cellWidget(row, 0)
@@ -716,13 +718,25 @@ class AddResultsPage(QWidget, DialogMixin):
         # If no checkbox is checked, show an error and return None
         self.show_dialog("Error", "Please select at least one record.")
         return None
+    
+    def get_selected_row(self):
+        # Loop through each row to check if the checkbox in the first column is checked
+        for row in range(self.results_table.rowCount()):
+            checkbox_widget = self.results_table.cellWidget(row, 0)
+            if checkbox_widget:
+                checkbox = checkbox_widget.findChild(QCheckBox)
+                if checkbox and checkbox.isChecked():
+                    return row  # Return the row index of the selected row
+        # If no checkbox is checked, show an error and return None
+        self.show_dialog("Error", "Please select at least one record.")
+        return None
 
     def delete_record_from_database(self):
         try:
-            # Get the selected row's Case No using the get_selected_row method
-            case_no = self.get_selected_row()
+            # Get the selected row's Case No using the get_case_no method
+            case_no = self.get_case_no()
             
-            # If no row is selected, the get_selected_row will return None and show an error dialog
+            # If no row is selected, the get_case_no will return None and show an error dialog
             if case_no is None:
                 return  # Early exit as an error dialog has already been shown
 
@@ -748,5 +762,36 @@ class AddResultsPage(QWidget, DialogMixin):
             self.show_dialog("Error", "Failed to delete the record.")
             print(e)
         
-        def generate_patient_report(self):
-            pass
+    def generate_patient_report(self):
+        # Get the selected row number
+        row = self.get_selected_row()
+        if row is None:
+            return  # Early exit if no row is selected
+
+        # Retrieve the "Status" from column 5 of the selected row
+        status_item = self.results_table.item(int(row), 6)
+        if status_item:
+            status = status_item.text()  # Get the text from the QTableWidgetItem
+            print(f"Status: {status}")  # For debugging, print the status value
+            
+            # Check if the status is "Pending"
+            if status == "Pending":
+                self.show_dialog("Error", "Failed to create the report for a pending case.")
+                return
+
+        # Get the case number
+        case_no = self.get_case_no()
+        if case_no is None:
+            return  # Early exit if no case number is retrieved
+
+        # Query the database for the case number
+        cursor.execute("SELECT * FROM LabReport WHERE id = ?", (case_no,))
+        result = cursor.fetchone()
+        
+        if not result:
+            self.show_dialog("Error", f"No report found for Case No: {case_no}")
+            return
+
+        # Process test results and generate the PDF report
+        test_results = json.loads(result[12])  # Assuming test results are in column 12
+        pdf_generator = PDFGenerator(test_results=test_results)

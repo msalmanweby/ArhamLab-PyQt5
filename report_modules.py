@@ -2,8 +2,6 @@ from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
 class PDFGenerator:
-    def __init__(self, file_name):
-        self.file_name = file_name
-        self.pdf_canvas = None
-
-        
+    def __init__(self, test_results):
+        self.test_results = test_results
+        print(self.test_results)
