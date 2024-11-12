@@ -11,3 +11,6 @@ venv/
 env/
 .env
 lab_reports.db
+
+# Ignore all PDF files
+*.pdf
