@@ -791,7 +791,7 @@ class AddResultsPage(QWidget, DialogMixin):
         if not result:
             self.show_dialog("Error", f"No report found for Case No: {case_no}")
             return
-
-        # Process test results and generate the PDF report
-        test_results = json.loads(result[12])  # Assuming test results are in column 12
-        pdf_generator = PDFGenerator(test_results=test_results)
+        
+        # Generate the PDF
+        pdf_generator = PDFGenerator("output.pdf")
+        pdf_generator.render_pdf(payload=result)

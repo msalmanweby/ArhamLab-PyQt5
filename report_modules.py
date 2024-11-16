@@ -1,104 +1,143 @@
-from reportlab.lib.pagesizes import A4
-from reportlab.pdfgen import canvas
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.lib.utils import ImageReader
-from bidi.algorithm import get_display
-from io import BytesIO
-import arabic_reshaper
+import os
+import json
+import logging
+import base64
+from weasyprint import HTML, CSS
+from jinja2 import Environment, FileSystemLoader
 import qrcode
+from io import BytesIO
 import barcode
+from barcode.writer import ImageWriter
+from PIL import Image
 
 class PDFGenerator:
-    def __init__(self, filename):
-        self.filename = filename
-        self.logo_path = "logo.png"
-        self.canvas = canvas.Canvas(self.filename, pagesize=A4)
-        self.width, self.height = A4
+    def __init__(self, output_filename):
+        self.output_filename = output_filename
+        self.logo_path = os.path.abspath("logo.png")
+        self.css_path = os.path.abspath("styles.css")
 
-        # Register the Urdu font
-        try:
-            pdfmetrics.registerFont(TTFont('UrduFont', './fonts/Amiri-Regular.ttf'))  # Replace with 'Nafees Nastaleeq.ttf' or 'Alvi Nastaleeq.ttf' if available
-        except Exception as e:
-            print(e)
-        self.create_pdf()
+    def get_base64_image(self, path):
+        with open(path, "rb") as image_file:
+            encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
+            return f"data:image/png;base64,{encoded_string}"
 
-    def set_text_style(self, font_name="UrduFont", font_size=20, color=(0, 0, 0)):
-        """Sets the font style, size, and color."""
-        self.canvas.setFont(font_name, font_size)
-        r, g, b = color
-        self.canvas.setFillColorRGB(r, g, b)
-
-    def create_pdf(self):
-        # Set header color
-        self.canvas.setFillColorRGB(7/255, 141/255, 218/255)
-        
-        # Draw header rectangle
-        self.padding = 20
-        header_height = 20
-        self.canvas.rect(self.padding, self.height - header_height - self.padding, self.width - 2 * self.padding, header_height, fill=1, stroke=0)
-        
-        # Add logo inside the boundary (left side)
-        logo_width = 160  
-        logo_height = 80  
-        logo_x = self.padding  # Add some margin from the left
-        logo_y = self.height - header_height - self.padding - logo_height + 10  # Start 10 units below the top of the boundary
-        
-        self.canvas.drawImage(self.logo_path, logo_x, logo_y, width=logo_width, height=logo_height, preserveAspectRatio=True, mask='auto')
-        
-        # Original Urdu text
-        urdu_text = "الارحم لیبارٹری"
-        
-        # Reshape and apply bidi to the Urdu text
-        reshaped_text = arabic_reshaper.reshape(urdu_text)
-        bidi_text = get_display(reshaped_text)
-        
-        # Set style for Urdu text
-        self.set_text_style(font_name="UrduFont", font_size=16, color=(0, 0, 0))
-        
-        # Position the Urdu text on the right side of the boundary
-        # Justify the text position to the right
-        text_x = self.width - self.padding - self.canvas.stringWidth(bidi_text, "UrduFont", 16)  # 10 units margin from the right
-        text_y = self.height - header_height - self.padding - 1.5 * 10 # Vertically center the text in the boundary
-        
-        # Draw the Urdu text on the canvas
-        self.canvas.drawString(text_x, text_y, bidi_text)
-
-        # Generate QR code using the qrcode library
-        qr_code_data = "Name: Muhammad Salman"  # Replace this with your URL or data
-        
-        # Create a QR code
+    def get_qr_code_base64(self, data):
         qr = qrcode.QRCode(
             version=1,
             error_correction=qrcode.constants.ERROR_CORRECT_L,
             box_size=10,
-            border=4,
+            border=0,
         )
-        qr.add_data(qr_code_data)
+        qr.add_data(data)
         qr.make(fit=True)
+        qr_img = qr.make_image(fill='black', back_color="transparent")
 
-        # Convert the QR code into an image
-        img = qr.make_image(fill='black', back_color='white')
+        byte_io = BytesIO()
+        qr_img.save(byte_io, format='PNG')
+        byte_io.seek(0)
 
-        # Save the image to a BytesIO object
-        img_bytes = BytesIO()
-        img.save(img_bytes, format='PNG')
-        img_bytes.seek(0)  # Reset cursor to the beginning of the BytesIO stream
+        encoded_qr = base64.b64encode(byte_io.read()).decode('utf-8')
+        return f"data:image/png;base64,{encoded_qr}"
 
-        # Use ImageReader to read the image from BytesIO object
-        qr_image = ImageReader(img_bytes)
+    def get_barcode_base64(self, data):
+        # Generate the barcode and save it to a BytesIO object
+        barcode_obj = barcode.Code128(data, writer=ImageWriter())
+        byte_io = BytesIO()
+        # Disable text by setting write_text to False
+        barcode_obj.write(byte_io, options={"module_width": 1, "module_height": 2.0, "write_text": False})
+        byte_io.seek(0)
 
-        # Create a canvas image for the QR code
-        qr_width = 60  # Set QR code size
-        qr_height = 60
-        qr_x = self.width - self.padding - qr_width  # Center the QR code horizontally
-        qr_y = self.height - header_height - self.padding - 1.5 * 10 - qr_height - 10  # Position it below the text
+        # Open the barcode image with Pillow
+        barcode_image = Image.open(byte_io).convert("RGBA")
 
-        # Draw the QR code from the ImageReader object
-        self.canvas.drawImage(qr_image, qr_x, qr_y, width=qr_width, height=qr_height)
+        # Make the white background transparent
+        datas = barcode_image.getdata()
+        new_data = []
+        for item in datas:
+            # Change all white (also shades of white) pixels to transparent
+            if item[:3] == (255, 255, 255):  # Detect white pixel
+                new_data.append((255, 255, 255, 0))  # Make it transparent
+            else:
+                new_data.append(item)  # Keep other colors the same
+        barcode_image.putdata(new_data)
 
-        # Save the PDF
-        self.canvas.save()
+        # Crop the transparent padding
+        bbox = barcode_image.getbbox()
+        cropped_image = barcode_image.crop(bbox)
 
-# Generate the PDF
-pdf = PDFGenerator("output.pdf")
+        # Save the updated image back to BytesIO
+        transparent_io = BytesIO()
+        cropped_image.save(transparent_io, format="PNG")
+        transparent_io.seek(0)
+
+        # Encode as base64
+        encoded_barcode = base64.b64encode(transparent_io.read()).decode('utf-8')
+        return f"data:image/png;base64,{encoded_barcode}"
+    
+    def paginate_results(self, test_results, items_per_page=5):
+        print(test_results)
+        print(type(test_results))
+        # Check if test_results is None or empty
+        if not test_results:
+            return []  # Return an empty list if no test results are provided
+
+        # Ensure test_results is a list
+        if not isinstance(test_results, list):
+            raise ValueError("test_results should be a list.")
+
+        # Split the test results into multiple pages (chunks)
+        return [test_results[i:i + items_per_page] for i in range(0, len(test_results), items_per_page)]
+
+
+
+    def render_pdf(self, payload):
+        patient_name =  payload[1]
+        father_husband_name =  payload[2]
+        age =  payload[3]
+        gender =  payload[4]
+        nic_number =  payload[5]
+        address =  payload[6]
+        registration_date =  payload[7]
+        registration_center =  payload[8]
+        specimen =  payload[9]
+        consultant_name =  payload[10]
+        test_results =  json.loads(payload[12])
+
+        
+        env = Environment(loader=FileSystemLoader('.'))
+        template = env.get_template("report_template.html")
+
+        logo_base64 = self.get_base64_image(self.logo_path)
+        qr_code_data = "https://example.com"
+        qr_code_base64 = self.get_qr_code_base64(qr_code_data)
+
+        # Generate barcodes
+        barcode_data_1 = "2367 - 10 / 2024"
+        barcode_data_2 = "4 - 31 / 10"
+        barcode_1_base64 = self.get_barcode_base64(barcode_data_1)
+        barcode_2_base64 = self.get_barcode_base64(barcode_data_2)
+
+        # print(self.test_results)
+        # paginated_results = self.paginate_results(test_results=test_results)
+        # Render HTML template
+        html_out = template.render(
+            doc_name = patient_name,
+            logo_path=logo_base64,
+            qr_code_path=qr_code_base64,
+            barcode_1_path=barcode_1_base64,
+            barcode_2_path=barcode_2_base64,
+            patient_name=patient_name,
+            father_husband_name=father_husband_name,
+            age=age,
+            gender=gender,
+            nic_number=nic_number,
+            address=address,
+            registration_date=registration_date,
+            registration_center=registration_center,
+            specimen=specimen,
+            consultant_name=consultant_name,
+            test_results=test_results
+        )
+
+        HTML(string=html_out).write_pdf(self.output_filename)
+
