@@ -9,6 +9,8 @@ from io import BytesIO
 import barcode
 from barcode.writer import ImageWriter
 from PIL import Image
+import pikepdf
+from datetime import datetime
 
 class PDFGenerator:
     def __init__(self, output_filename):
@@ -73,24 +75,9 @@ class PDFGenerator:
         # Encode as base64
         encoded_barcode = base64.b64encode(transparent_io.read()).decode('utf-8')
         return f"data:image/png;base64,{encoded_barcode}"
-    
-    def paginate_results(self, test_results, items_per_page=5):
-        print(test_results)
-        print(type(test_results))
-        # Check if test_results is None or empty
-        if not test_results:
-            return []  # Return an empty list if no test results are provided
-
-        # Ensure test_results is a list
-        if not isinstance(test_results, list):
-            raise ValueError("test_results should be a list.")
-
-        # Split the test results into multiple pages (chunks)
-        return [test_results[i:i + items_per_page] for i in range(0, len(test_results), items_per_page)]
-
-
 
     def render_pdf(self, payload):
+        case_id = payload[0]
         patient_name =  payload[1]
         father_husband_name =  payload[2]
         age =  payload[3]
@@ -102,10 +89,17 @@ class PDFGenerator:
         specimen =  payload[9]
         consultant_name =  payload[10]
         test_results =  json.loads(payload[12])
+        print(test_results)
 
-        
         env = Environment(loader=FileSystemLoader('.'))
         template = env.get_template("report_template.html")
+
+        date_obj = datetime.strptime(registration_date, "%Y-%m-%d")
+
+        # Extract day and month
+        day = date_obj.day
+        month = date_obj.month
+
 
         logo_base64 = self.get_base64_image(self.logo_path)
         qr_code_data = "https://example.com"
@@ -113,31 +107,57 @@ class PDFGenerator:
 
         # Generate barcodes
         barcode_data_1 = "2367 - 10 / 2024"
-        barcode_data_2 = "4 - 31 / 10"
+        barcode_data_2 = f"{case_id} - {day} / {month}"
         barcode_1_base64 = self.get_barcode_base64(barcode_data_1)
         barcode_2_base64 = self.get_barcode_base64(barcode_data_2)
 
-        # print(self.test_results)
-        # paginated_results = self.paginate_results(test_results=test_results)
-        # Render HTML template
-        html_out = template.render(
-            doc_name = patient_name,
-            logo_path=logo_base64,
-            qr_code_path=qr_code_base64,
-            barcode_1_path=barcode_1_base64,
-            barcode_2_path=barcode_2_base64,
-            patient_name=patient_name,
-            father_husband_name=father_husband_name,
-            age=age,
-            gender=gender,
-            nic_number=nic_number,
-            address=address,
-            registration_date=registration_date,
-            registration_center=registration_center,
-            specimen=specimen,
-            consultant_name=consultant_name,
-            test_results=test_results
-        )
+        # Initialize pikepdf Pdf object for merging
+        pdf_merger = pikepdf.Pdf.new()
 
-        HTML(string=html_out).write_pdf(self.output_filename)
+        # Loop through each test result and generate each page
+        for test in test_results:
+            html_out = template.render(
+                doc_name=patient_name,
+                logo_path=logo_base64,
+                qr_code_path=qr_code_base64,
+                barcode_1_path=barcode_1_base64,
+                barcode_data_2 = barcode_data_2,
+                barcode_2_path=barcode_2_base64,
+                patient_name=patient_name,
+                father_husband_name=father_husband_name,
+                age=age,
+                gender=gender,
+                nic_number=nic_number,
+                address=address,
+                registration_date=registration_date,
+                registration_center=registration_center,
+                specimen=specimen,
+                consultant_name=consultant_name,
+                test_name=test["name"],
+                test_types=test["types"],
+            )
+            
+            # Convert HTML to PDF
+            pdf_page = HTML(string=html_out).write_pdf()
 
+            # Use pikepdf to open the generated PDF page
+            with pikepdf.open(BytesIO(pdf_page)) as pdf_page_file:
+                # Merge the single page PDF into the final PDF
+                pdf_merger.pages.extend(pdf_page_file.pages)
+
+        # Save the final merged PDF to the output file
+        pdf_merger.save(self.output_filename)
+
+def paginate_results(self, test_results, items_per_page=5):
+    print(test_results)
+    print(type(test_results))
+    # Check if test_results is None or empty
+    if not test_results:
+        return []  # Return an empty list if no test results are provided
+
+    # Ensure test_results is a list
+    if not isinstance(test_results, list):
+        raise ValueError("test_results should be a list.")
+
+    # Split the test results into multiple pages (chunks)
+    return [test_results[i:i + items_per_page] for i in range(0, len(test_results), items_per_page)]
