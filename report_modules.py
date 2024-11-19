@@ -17,6 +17,7 @@ class PDFGenerator:
         self.output_filename = output_filename
         self.logo_path = os.path.abspath("logo.png")
         self.css_path = os.path.abspath("styles.css")
+        self.watermark_path = os.path.abspath("watermark.png")
 
     def get_base64_image(self, path):
         with open(path, "rb") as image_file:
@@ -89,7 +90,6 @@ class PDFGenerator:
         specimen =  payload[9]
         consultant_name =  payload[10]
         test_results =  json.loads(payload[12])
-        print(test_results)
 
         env = Environment(loader=FileSystemLoader('.'))
         template = env.get_template("report_template.html")
@@ -102,11 +102,12 @@ class PDFGenerator:
 
 
         logo_base64 = self.get_base64_image(self.logo_path)
+        watermark_base64 = self.get_base64_image(self.watermark_path)
         qr_code_data = "https://example.com"
         qr_code_base64 = self.get_qr_code_base64(qr_code_data)
 
         # Generate barcodes
-        barcode_data_1 = "2367 - 10 / 2024"
+        barcode_data_1 = f"2367 - {day} / {month}"
         barcode_data_2 = f"{case_id} - {day} / {month}"
         barcode_1_base64 = self.get_barcode_base64(barcode_data_1)
         barcode_2_base64 = self.get_barcode_base64(barcode_data_2)
@@ -119,8 +120,10 @@ class PDFGenerator:
             html_out = template.render(
                 doc_name=patient_name,
                 logo_path=logo_base64,
+                watermark_path=watermark_base64,
                 qr_code_path=qr_code_base64,
                 barcode_1_path=barcode_1_base64,
+                barcode_data_1 = barcode_data_1,
                 barcode_data_2 = barcode_data_2,
                 barcode_2_path=barcode_2_base64,
                 patient_name=patient_name,
@@ -148,16 +151,4 @@ class PDFGenerator:
         # Save the final merged PDF to the output file
         pdf_merger.save(self.output_filename)
 
-def paginate_results(self, test_results, items_per_page=5):
-    print(test_results)
-    print(type(test_results))
-    # Check if test_results is None or empty
-    if not test_results:
-        return []  # Return an empty list if no test results are provided
 
-    # Ensure test_results is a list
-    if not isinstance(test_results, list):
-        raise ValueError("test_results should be a list.")
-
-    # Split the test results into multiple pages (chunks)
-    return [test_results[i:i + items_per_page] for i in range(0, len(test_results), items_per_page)]

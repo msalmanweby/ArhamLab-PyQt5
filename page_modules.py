@@ -16,13 +16,16 @@ from PyQt5.QtWidgets import (
     QLabel,
     QDateEdit,
     QDialogButtonBox,
-    QDialog
+    QDialog,
+    QFileDialog
 )
 from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import Qt, QDate
 from lab_modules import tests_list
 from app_config import time_zone, cursor, connection
 from report_modules import PDFGenerator
+import os
+from pathlib import Path
 
 class DialogMixin:
     def show_dialog(self, title, message, dialog_type="information"):
@@ -39,7 +42,7 @@ class DialogMixin:
         # Create a custom dialog for other types (Information, Warning, etc.)
         dialog = QDialog()
         dialog.setWindowTitle(title)
-        dialog.setWindowIcon(QIcon("logo.png"))
+        dialog.setWindowIcon(QIcon("icon.png"))
         
         # Set a fixed width for the dialog
         dialog.setFixedWidth(400)
@@ -119,10 +122,7 @@ class AddResultDialog(QDialog, DialogMixin):
 
         update_result = QPushButton("Update")
         update_result.clicked.connect(self.update_results_in_db)
-        form_layout.addRow(update_result)
-
-        update_result.clicked.connect(self.update_results_in_db)
-        
+        form_layout.addRow(update_result)        
 
         main_layout.addLayout(form_layout)
 
@@ -168,6 +168,7 @@ class AddResultDialog(QDialog, DialogMixin):
                             } for t in types_info
                         ]
                     })
+
     def update_results_in_db(self):
         # Retrieve selected test and type
         selected_test_name = self.test_name.currentText()
@@ -193,6 +194,8 @@ class AddResultDialog(QDialog, DialogMixin):
 
         # Commit the changes to the database
         connection.commit()
+
+        self.show_dialog("Success", f"Result added successfully!")
 
 
     def update_test_types(self):
@@ -222,9 +225,6 @@ class AddResultDialog(QDialog, DialogMixin):
                         self.unit.setText(test_type["unit"])
                         self.result.setText(test_type["result"])
                         break
-
-    
-
 
 class PatientInfoPage(QWidget, DialogMixin):
     def __init__(self):
@@ -772,8 +772,7 @@ class AddResultsPage(QWidget, DialogMixin):
         status_item = self.results_table.item(int(row), 6)
         if status_item:
             status = status_item.text()  # Get the text from the QTableWidgetItem
-            print(f"Status: {status}")  # For debugging, print the status value
-            
+
             # Check if the status is "Pending"
             if status == "Pending":
                 self.show_dialog("Error", "Failed to create the report for a pending case.")
@@ -787,11 +786,31 @@ class AddResultsPage(QWidget, DialogMixin):
         # Query the database for the case number
         cursor.execute("SELECT * FROM LabReport WHERE id = ?", (case_no,))
         result = cursor.fetchone()
-        
+
         if not result:
             self.show_dialog("Error", f"No report found for Case No: {case_no}")
             return
-        
+
+        # # Predefine a directory (e.g., Documents folder)
+        # documents_dir = str(Path.home() / "Documents")
+        # default_file_name = f"Patient_Report_{case_no}.pdf"
+
+        # # Open a directory selection dialog
+        # selected_dir = QFileDialog.getExistingDirectory(
+        #     self,  # Parent widget
+        #     "Select Directory to Save Report",  # Dialog title
+        #     documents_dir  # Default directory
+        # )
+
+        # if not selected_dir:
+        #     return  # User cancelled the selection
+
+        # # Combine the selected directory with the default file name
+        # save_path = os.path.join(selected_dir, default_file_name)
+
         # Generate the PDF
+        # pdf_generator = PDFGenerator(save_path)
         pdf_generator = PDFGenerator("output.pdf")
         pdf_generator.render_pdf(payload=result)
+
+        self.show_dialog("Success", f"Report saved successfully")
