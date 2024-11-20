@@ -11,13 +11,14 @@ from barcode.writer import ImageWriter
 from PIL import Image
 import pikepdf
 from datetime import datetime
+from app_config import resource_path
 
 class PDFGenerator:
     def __init__(self, output_filename):
         self.output_filename = output_filename
-        self.logo_path = os.path.abspath("logo.png")
-        self.css_path = os.path.abspath("styles.css")
-        self.watermark_path = os.path.abspath("watermark.png")
+        self.logo_path = resource_path("assets/logo.png")
+        print
+        self.watermark_path = resource_path("assets/watermark.png")
 
     def get_base64_image(self, path):
         with open(path, "rb") as image_file:
@@ -90,6 +91,7 @@ class PDFGenerator:
         specimen =  payload[9]
         consultant_name =  payload[10]
         test_results =  json.loads(payload[12])
+        phone_number = payload[13]
 
         env = Environment(loader=FileSystemLoader('.'))
         template = env.get_template("report_template.html")
@@ -136,6 +138,7 @@ class PDFGenerator:
                 registration_center=registration_center,
                 specimen=specimen,
                 consultant_name=consultant_name,
+                phone_number = phone_number,
                 test_name=test["name"],
                 test_types=test["types"],
             )

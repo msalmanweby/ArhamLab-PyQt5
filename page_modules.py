@@ -20,12 +20,31 @@ from PyQt5.QtWidgets import (
     QFileDialog
 )
 from PyQt5.QtGui import QIcon
-from PyQt5.QtCore import Qt, QDate
+from PyQt5.QtCore import Qt, QDate, pyqtSignal, QObject
 from lab_modules import tests_list
-from app_config import time_zone, cursor, connection
+from app_config import time_zone, cursor, connection, resource_path
 from report_modules import PDFGenerator
 import os
 from pathlib import Path
+import threading
+
+class PDFGeneratorThread(QObject, threading.Thread):
+    success_signal = pyqtSignal(str)
+    error_signal = pyqtSignal(str)
+
+    def __init__(self, pdf_generator, payload, case_no):
+        QObject.__init__(self)  # Initialize QObject
+        threading.Thread.__init__(self)  # Initialize threading.Thread
+        self.pdf_generator = pdf_generator
+        self.payload = payload
+        self.case_no = case_no
+
+    def run(self):
+        try:
+            self.pdf_generator.render_pdf(self.payload)
+            self.success_signal.emit(f"PDF generation completed: {self.case_no}")
+        except Exception as e:
+            self.error_signal.emit(f"Error during PDF generation for {self.case_no}")
 
 class DialogMixin:
     def show_dialog(self, title, message, dialog_type="information"):
@@ -42,7 +61,7 @@ class DialogMixin:
         # Create a custom dialog for other types (Information, Warning, etc.)
         dialog = QDialog()
         dialog.setWindowTitle(title)
-        dialog.setWindowIcon(QIcon("icon.png"))
+        dialog.setWindowIcon(QIcon(resource_path("assets/icon.png")))
         
         # Set a fixed width for the dialog
         dialog.setFixedWidth(400)
@@ -75,7 +94,6 @@ class DialogMixin:
         
         # Show the dialog
         dialog.exec_()
-
 
 class AddResultDialog(QDialog, DialogMixin):
     def __init__(self, record, parent=None):
@@ -270,6 +288,8 @@ class PatientInfoPage(QWidget, DialogMixin):
         self.address_label = QLabel("Address:")
         self.address = QLineEdit()
 
+        
+
         self.registration_center_label = QLabel("Registration Center:")
         self.registration_center = QLineEdit()
 
@@ -283,22 +303,22 @@ class PatientInfoPage(QWidget, DialogMixin):
         self.consultant_name.setFixedWidth(200)
         self.consultant_name.addItems(["","Hamza"])
 
+
+        self.phone_number_label = QLabel("Phone Number:")
+        self.phone_number = QLineEdit()
+        self.phone_number.setFixedWidth(200)
+
+
         self.test_name_label = QLabel("Test Name:")
         self.test_name = QComboBox()
-        self.test_name.setFixedWidth(400)
+        self.test_name.setFixedWidth(320)
         self.test_name.addItems(test["name"] for test in tests_list)
 
         self.test_type_label = QLabel("Test Type:")
         self.test_type = QComboBox()
-        self.test_type.setFixedWidth(400)
+        self.test_type.setFixedWidth(320)
         self.update_test_types()
         self.test_name.currentIndexChanged.connect(self.update_test_types)
-
-        self.price_label = QLabel("Price:")
-        self.price = QLineEdit()
-        self.price.setReadOnly(True)
-        self.update_test_price()
-        self.test_type.currentIndexChanged.connect(self.update_test_price)
         self.scheduled_tests = []
 
         row_layout_0.addStretch(1)
@@ -318,6 +338,7 @@ class PatientInfoPage(QWidget, DialogMixin):
         row_layout_2.addWidget(self.gender)
         row_layout_2.addWidget(self.address_label)
         row_layout_2.addWidget(self.address)
+        
         form_layout.addRow(row_layout_2)
 
         row_layout_3.addWidget(self.registration_center_label)
@@ -328,12 +349,12 @@ class PatientInfoPage(QWidget, DialogMixin):
         row_layout_3.addWidget(self.consultant_name)
         form_layout.addRow(row_layout_3)
 
+        row_layout_4.addWidget(self.phone_number_label)
+        row_layout_4.addWidget(self.phone_number)
         row_layout_4.addWidget(self.test_name_label)
         row_layout_4.addWidget(self.test_name)
         row_layout_4.addWidget(self.test_type_label)
         row_layout_4.addWidget(self.test_type)
-        row_layout_4.addWidget(self.price_label)
-        row_layout_4.addWidget(self.price)
         form_layout.addRow(row_layout_4)
 
         add_entry = QPushButton("Add Entry")
@@ -355,8 +376,8 @@ class PatientInfoPage(QWidget, DialogMixin):
         self.main_layout.addLayout(form_layout)
 
         self.schedule_test_table = QTableWidget()
-        self.schedule_test_table.setColumnCount(4)
-        self.schedule_test_table.setHorizontalHeaderLabels(["Select", "Test Name", "Test Type", "Price"])
+        self.schedule_test_table.setColumnCount(3)
+        self.schedule_test_table.setHorizontalHeaderLabels(["Select", "Test Name", "Test Type"])
         self.schedule_test_table.verticalHeader().setVisible(False)
 
         # Set a fixed width for the "Select" column (the first column)
@@ -366,7 +387,7 @@ class PatientInfoPage(QWidget, DialogMixin):
         header = self.schedule_test_table.horizontalHeader()
         header.setSectionResizeMode(1, QHeaderView.Stretch)  # "Test Name" column
         header.setSectionResizeMode(2, QHeaderView.Stretch)  # "Test Type" column
-        header.setSectionResizeMode(3, QHeaderView.Stretch)  # "Price" column
+        # header.setSectionResizeMode(3, QHeaderView.Stretch)  # "Price" column
         
         # Ensure the last section stretches to fill remaining space
         self.main_layout.addWidget(self.schedule_test_table)
@@ -398,14 +419,15 @@ class PatientInfoPage(QWidget, DialogMixin):
             "consultant_name": self.consultant_name.currentText(),
             "scheduled_tests": json.dumps(self.scheduled_tests),  # JSON data as string
             "test_results": json.dumps([]),  # JSON data as string
+            "phone_number": self.phone_number.text(),
         }
         try:
             cursor.execute("""
                 INSERT INTO LabReport (
                     patient_name, father_husband_name, age, gender, nic_number,
                     address, registration_date, registration_center, specimen,
-                    consultant_name, scheduled_tests, test_results
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    consultant_name, scheduled_tests, test_results, phone_number
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, tuple(patient_data.values()))
             connection.commit()
             if cursor.lastrowid:
@@ -443,7 +465,7 @@ class PatientInfoPage(QWidget, DialogMixin):
         test = {
             "name": self.test_name.currentText(),
             "type": self.test_type.currentText(),
-            "price": self.price.text(),
+            # "price": self.price.text(),
         }
 
         self.scheduled_tests.append(test)
@@ -467,7 +489,6 @@ class PatientInfoPage(QWidget, DialogMixin):
         # Insert the test data in the remaining columns (starting from column 1)
         self.schedule_test_table.setItem(row_position, 1, QTableWidgetItem(test["name"]))
         self.schedule_test_table.setItem(row_position, 2, QTableWidgetItem(test["type"]))
-        self.schedule_test_table.setItem(row_position, 3, QTableWidgetItem(test["price"]))
 
         # Set text alignment for all columns with test data
         for column in range(1, self.schedule_test_table.columnCount()):
@@ -588,6 +609,12 @@ class AddResultsPage(QWidget, DialogMixin):
 
         # Set layout
         self.setLayout(self.main_layout)
+
+    def on_pdf_success(self, message):
+        self.show_dialog("Success", message)
+
+    def on_pdf_error(self, message):
+        self.show_dialog("Error", message)
 
     def search_records(self, show_dialog=True):
         try:
@@ -791,26 +818,35 @@ class AddResultsPage(QWidget, DialogMixin):
             self.show_dialog("Error", f"No report found for Case No: {case_no}")
             return
 
-        # # Predefine a directory (e.g., Documents folder)
-        # documents_dir = str(Path.home() / "Documents")
-        # default_file_name = f"Patient_Report_{case_no}.pdf"
+        # Predefine a directory (e.g., Documents folder)
+        documents_dir = str(Path.home() / "Documents")
+        default_file_name = f"Patient_Report_{case_no}.pdf"
 
-        # # Open a directory selection dialog
-        # selected_dir = QFileDialog.getExistingDirectory(
-        #     self,  # Parent widget
-        #     "Select Directory to Save Report",  # Dialog title
-        #     documents_dir  # Default directory
-        # )
+        # Open a directory selection dialog
+        selected_dir = QFileDialog.getExistingDirectory(
+            self,  # Parent widget
+            "Select Directory to Save Report",  # Dialog title
+            documents_dir  # Default directory
+        )
 
-        # if not selected_dir:
-        #     return  # User cancelled the selection
+        if not selected_dir:
+            return  # User cancelled the selection
 
-        # # Combine the selected directory with the default file name
-        # save_path = os.path.join(selected_dir, default_file_name)
+        # Combine the selected directory with the default file name
+        save_path = os.path.join(selected_dir, default_file_name)
 
         # Generate the PDF
-        # pdf_generator = PDFGenerator(save_path)
-        pdf_generator = PDFGenerator("output.pdf")
-        pdf_generator.render_pdf(payload=result)
+        pdf_generator = PDFGenerator(save_path)
 
-        self.show_dialog("Success", f"Report saved successfully")
+        # Create and start the PDF generation thread
+        pdf_thread = PDFGeneratorThread(pdf_generator, result, case_no)
+        # Connect signals to dialog methods
+        pdf_thread.success_signal.connect(self.on_pdf_success)
+        pdf_thread.error_signal.connect(self.on_pdf_error)
+
+        # Start the thread
+        pdf_thread.start()
+
+    
+
+        

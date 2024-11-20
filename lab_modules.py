@@ -178,4 +178,17 @@ tests_list = [
             },
         ],
     },
+
+    {
+        "name": "Mind Diagnosis",
+        "types": [
+            {
+                "name": "Pagal",
+                "minValue": "0",
+                "maxValue": "100",
+                "unit": "%",
+                "price": "600"
+            }
+        ],
+    },
 ]

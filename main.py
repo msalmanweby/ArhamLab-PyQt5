@@ -13,13 +13,14 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import Qt
 from page_modules import PatientInfoPage, AddResultsPage
-from app_config import cursor, connection
+from app_config import cursor, connection, resource_path
+
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("AlArham Laboratory")
-        self.setWindowIcon(QIcon("logo.png"))
+        self.setWindowIcon(QIcon(resource_path("assets/icon.png")))
         self.time_zone = pytz.timezone('Asia/Karachi')
         screen_rect = QDesktopWidget().screenGeometry()
         self.resize(screen_rect.width(), screen_rect.height())
@@ -60,7 +61,8 @@ class MainWindow(QMainWindow):
                 specimen TEXT,
                 consultant_name TEXT,
                 scheduled_tests TEXT,
-                test_results TEXT
+                test_results TEXT,
+                phone_number TEXT
             )
         """)
         connection.commit()
