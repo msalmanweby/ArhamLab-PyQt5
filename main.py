@@ -20,7 +20,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("AlArham Laboratory")
-        self.setWindowIcon(QIcon(resource_path("assets/icon.png")))
+        self.setWindowIcon(QIcon(resource_path("assets\\icon.png")))
         self.time_zone = pytz.timezone('Asia/Karachi')
         screen_rect = QDesktopWidget().screenGeometry()
         self.resize(screen_rect.width(), screen_rect.height())

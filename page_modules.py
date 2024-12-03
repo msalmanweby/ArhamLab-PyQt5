@@ -44,7 +44,8 @@ class PDFGeneratorThread(QObject, threading.Thread):
             self.pdf_generator.render_pdf(self.payload)
             self.success_signal.emit(f"PDF generation completed: {self.case_no}")
         except Exception as e:
-            self.error_signal.emit(f"Error during PDF generation for {self.case_no}")
+            print(e)
+            self.error_signal.emit(f"{e}")
 
 class DialogMixin:
     def show_dialog(self, title, message, dialog_type="information"):
@@ -61,7 +62,7 @@ class DialogMixin:
         # Create a custom dialog for other types (Information, Warning, etc.)
         dialog = QDialog()
         dialog.setWindowTitle(title)
-        dialog.setWindowIcon(QIcon(resource_path("assets/icon.png")))
+        dialog.setWindowIcon(QIcon(resource_path("assets\\icon.png")))
         
         # Set a fixed width for the dialog
         dialog.setFixedWidth(400)

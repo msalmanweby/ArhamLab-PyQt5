@@ -7,14 +7,15 @@ import sys
 
 def resource_path(relative_path):
     try:
-        base_path = sys._MEIPASS2
+        # PyInstaller's temporary folder during runtime
+        base_path = sys._MEIPASS
     except Exception:
+        # Base path for a regular Python script
         base_path = os.path.abspath(".")
 
     return os.path.join(base_path, relative_path)
 
-db_path = resource_path("data/lab_reports.db")
-
+db_path = resource_path("data\\lab_reports.db")
 # Establish the connection to the database
 connection = sqlite3.connect(db_path)
 

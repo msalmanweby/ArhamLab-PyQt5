@@ -16,9 +16,9 @@ from app_config import resource_path
 class PDFGenerator:
     def __init__(self, output_filename):
         self.output_filename = output_filename
-        self.logo_path = resource_path("assets/logo.png")
-        print
-        self.watermark_path = resource_path("assets/watermark.png")
+        self.logo_path = resource_path("assets\\logo.png")
+        self.template_folder_path = resource_path("templates")
+        self.watermark_path = resource_path("assets\\watermark.png")
 
     def get_base64_image(self, path):
         with open(path, "rb") as image_file:
@@ -93,7 +93,7 @@ class PDFGenerator:
         test_results =  json.loads(payload[12])
         phone_number = payload[13]
 
-        env = Environment(loader=FileSystemLoader('.'))
+        env = Environment(loader=FileSystemLoader(self.template_folder_path))
         template = env.get_template("report_template.html")
 
         date_obj = datetime.strptime(registration_date, "%Y-%m-%d")

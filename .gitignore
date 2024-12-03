@@ -17,3 +17,5 @@ lab_reports.db
 
 dist
 build
+
+*.spec
